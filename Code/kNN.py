@@ -3,11 +3,14 @@ from pyspark.sql import SQLContext
 from pyspark.mllib.linalg import Vectors
 from pyspark.sql import Row
 from sklearn.neighbors import NearestNeighbors
+from sklearn.neighbors import KNeighborsClassifier
 import numpy as np
 from pyspark.mllib.linalg.distributed import IndexedRow, IndexedRowMatrix
 import pandas as pd
 from pyspark.rdd import RDD
 import os
+import warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 #os.path.abspath('/media/vishwanath/Vishwanath/IIITB/Sem_2/PE/Data/Training_data.csv')
 sc = SparkContext("local", "test_script")
@@ -31,7 +34,7 @@ def transformToLabelledPoint(inputStr):
 
 def tranformToClass(inputStr):
     attlist = inputStr.split(",")
-    classes.append(attlist[1])
+    classes = (float(attlist[0]), attlist[1])
     return classes
 
 autolp = data.map(transformToLabelledPoint)
@@ -39,25 +42,43 @@ autolpCollect = autolp.collect()
 ##autoDF = sqlContext.createDataFrame(autolp, ["g-r","u-r","r-i","i-z"])
 vectorsCollected = np.vstack(tuple(autolpCollect))
 
-#classes = data.map(tranformToClass)
-##classDF = sqlContext.createDataFrame(classes, ["class"])
-##classDF.select("class").show(10)
+classes = data.map(tranformToClass)
+classDF = sqlContext.createDataFrame(classes, ["id","class"])
+dfclass = classDF.toPandas()
+classPD = pd.Series(dfclass['class'])
+
+knn = KNeighborsClassifier(n_neighbors=7)
+knn.fit(vectorsCollected, classPD)
 
 ##(trainingData, testData) = autoDF.randomSplit([0.8,0.2])
 ##df = trainingData.toPandas()
 #print df
 ##df2 = testData.toPandas()
-nbrs = NearestNeighbors(n_neighbors=7, algorithm='auto').fit(vectorsCollected)
-bc_knnobj = sc.broadcast(nbrs)
+##nbrs = NearestNeighbors(n_neighbors=7, algorithm='auto').fit(vectorsCollected)
+bc_knnobj = sc.broadcast(knn)
+##knnlist = []
+##bc_knnobj = sc.broadcast(knnlist)
 
 ##distances, indices = nbrs.kneighbors(vectorsCollected)
-results = autolp.map(lambda x: bc_knnobj.value.kneighbors(x))
-print results.take(2)
+##results = autolp.map(lambda x: bc_knnobj.value.kneighbors(x))
 
-def accessList(x,y):
-    
+results = autolp.map(lambda x: bc_knnobj.value.predict(x))
+print results.take(1)
 
-resultList = results.map(accessList)
+count = sc.accumulator(0)
+def tranformToResultList(x):
+    global count
+    count += 1
+    lp = (x.item(0))
+    return lp
+
+resultlist = results.map(tranformToResultList)
+resultlist = resultlist.zipWithIndex().collect()
+print resultlist.take(5)
+#resultlist.saveAsTextFile("/media/vishwanath/Vishwanath/IIITB/Sem_2/PE/Spark/knn-result")
+##predictedClassDF = sqlContext.createDataFrame(resultlist, ["id","class"])
+##predictedClassDF.select("id","class").show(5)
+
 
 ##predicted_class = []
 ##for i in range(indices.size/7):
