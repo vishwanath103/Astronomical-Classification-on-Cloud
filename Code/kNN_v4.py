@@ -61,7 +61,20 @@ bc_knnobj = sc.broadcast(knn)
 ##distances, indices = nbrs.kneighbors(vectorsCollected)
 ##results = autolp.map(lambda x: bc_knnobj.value.kneighbors(x))
 
-results = autolp.map(lambda x: bc_knnobj.value.predict(x))
+testingFile = "gs://vishu/TestingData/"
+testData = sc.textFile(testingFile)
+
+def transformTestData(inputStr):
+    attlist = inputStr.split(",")
+    data = (float(attlist[4]) - float(attlist[6]),
+         float(attlist[7]) - float(attlist[6]),
+         float(attlist[6]) - float(attlist[5]),
+         float(attlist[5]) - float(attlist[8]))
+    return data
+
+testlp = testData.map(transformTestData)
+
+results = testlp.map(lambda x: bc_knnobj.value.predict(x))
 print results.take(5)
 
 
